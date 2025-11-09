@@ -111,10 +111,29 @@ func (m model) ViewTelePrompter() string {
 	return b.String()
 }
 
+func (m model) ViewAddSource() string {
+	switch m.selectedType {
+	case inputTypeText:
+		var s strings.Builder
+		s.WriteString("📝 Enter Project Name")
+		s.WriteString("\n\n")
+		s.WriteString(m.textinput.View())
+		s.WriteString("\n\n")
+		return s.String()
+	case inputTypeFile:
+		return "Add file source"
+	case inputTypeUrl:
+		return "Add url source"
+	}
+	return ""
+}
+
 func (m model) View() string {
 	switch m.app_state {
 	case appSelectedSource:
 		return m.viewInputSelector()
+	case addSource:
+		return m.ViewAddSource()
 	case appRunning:
 		return m.ViewTelePrompter()
 	}

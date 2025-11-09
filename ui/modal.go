@@ -6,6 +6,8 @@ import (
 
 	"github.com/chann44/goTele/internals"
 	"github.com/charmbracelet/bubbles/filepicker"
+	"github.com/charmbracelet/bubbles/textinput"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -23,15 +25,18 @@ const (
 
 const (
 	appSelectedSource appState = iota
+	addSource
 	appRunning
 )
 
 type model struct {
+	textinput    textinput.Model
 	app_state    appState
 	filepicker   filepicker.Model
 	lines        []string
 	offset       int // scroll offset (which line is at top)
 	viewport     int // height of viewport
+	width        int // terminal width
 	autoScroll   bool
 	quitting     bool
 	err          error
@@ -65,8 +70,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateInputSelection(msg)
 	case appRunning:
 		return m.UpdateTelePrompter(msg)
+	case addSource:
+		return m.updateSourceSelection(msg)
 	}
+
 	return m, nil
+}
+
+func (m model) updateSourceSelection(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "q", "ctrl+c":
+			m.quitting = true
+			return m, tea.Quit
+		case "enter":
+			text := m.textinput.Value()
+			wrappedLines := wrapText(text, m.width)
+			m.lines = append(m.lines, wrappedLines...)
+			m.app_state = appRunning
+			return m, internals.Tick()
+		}
+	case tea.WindowSizeMsg:
+		m.viewport = msg.Height - 4
+		m.width = msg.Width
+	}
+	m.textinput, cmd = m.textinput.Update(msg)
+	return m, cmd
 }
 
 func (m model) updateInputSelection(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -86,37 +118,24 @@ func (m model) updateInputSelection(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			m.selectedType = inputType(m.cursor)
-			m.app_state = appRunning
-
-			// Initialize with sample text for now
 			if m.selectedType == inputTypeText {
-				text := `Welcome to the presentation.
-Today we will discuss the future of technology.
-Artificial intelligence is transforming our world.
-Machine learning enables computers to learn from data.
-Deep learning uses neural networks with many layers.
-Natural language processing helps computers understand text.
-Computer vision allows machines to interpret images.
-Robotics combines AI with physical automation.
-The Internet of Things connects billions of devices.
-Cloud computing provides scalable infrastructure.
-Blockchain enables decentralized applications.
-Quantum computing promises exponential speedups.
-Biotechnology merges biology with technology.
-Renewable energy powers a sustainable future.
-Space exploration opens new frontiers.
-Virtual reality creates immersive experiences.
-Augmented reality overlays digital information.
-5G networks enable faster connectivity.
-Edge computing brings processing closer to data.
-Thank you for your attention.`
-				m.lines = strings.Split(text, "\n")
+				ti := textinput.New()
+				ti.Placeholder = "Enter your text..."
+				ti.Focus()
+				ti.CharLimit = 0 // 0 means no limit
+				if m.width > 0 {
+					ti.Width = m.width - 4 // Leave some margin
+				} else {
+					ti.Width = 50
+				}
+				m.textinput = ti
 			}
-
-			return m, internals.Tick()
+			m.app_state = addSource
+			return m, textinput.Blink
 		}
 	case tea.WindowSizeMsg:
 		m.viewport = msg.Height - 4
+		m.width = msg.Width
 	}
 	return m, nil
 }
@@ -143,6 +162,7 @@ func (m model) UpdateTelePrompter(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.viewport = msg.Height - 4
+		m.width = msg.Width
 
 	case internals.TickMsg:
 		if m.autoScroll && m.offset < len(m.lines)-1 {
@@ -152,4 +172,63 @@ func (m model) UpdateTelePrompter(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func wrapText(text string, width int) []string {
+	if width <= 0 {
+		width = 80
+	}
+
+	effectiveWidth := width - 4
+
+	if effectiveWidth <= 0 {
+		effectiveWidth = 40 // Minimum reasonable width
+	}
+
+	var lines []string
+	words := strings.Fields(text)
+
+	if len(words) == 0 {
+		return []string{""}
+	}
+
+	currentLine := words[0]
+
+	if len(currentLine) > effectiveWidth {
+		for len(currentLine) > effectiveWidth {
+			lines = append(lines, currentLine[:effectiveWidth])
+			currentLine = currentLine[effectiveWidth:]
+		}
+	}
+
+	for i := 1; i < len(words); i++ {
+		word := words[i]
+
+		if len(word) > effectiveWidth {
+			if currentLine != "" {
+				lines = append(lines, currentLine)
+				currentLine = ""
+			}
+			for len(word) > effectiveWidth {
+				lines = append(lines, word[:effectiveWidth])
+				word = word[effectiveWidth:]
+			}
+			currentLine = word
+			continue
+		}
+
+		testLine := currentLine + " " + word
+		if len(testLine) <= effectiveWidth {
+			currentLine = testLine
+		} else {
+			lines = append(lines, currentLine)
+			currentLine = word
+		}
+	}
+
+	if currentLine != "" {
+		lines = append(lines, currentLine)
+	}
+
+	return lines
 }
