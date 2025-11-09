@@ -1,46 +1,52 @@
 package ui
 
 import (
-	"strings"
+	"time"
 
 	"github.com/chann44/goTele/internals"
+	"github.com/charmbracelet/bubbles/filepicker"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+type appState int
+
+type clearErrorMsg struct{}
+
+type inputType int
+
+const (
+	inputTypeText inputType = iota
+	inputTypeFile
+	inputTypeUrl
+)
+
+const (
+	appSelectedSource appState = iota
+	appRunning
+)
+
 type model struct {
+	app_state  appState
+	filepicker filepicker.Model
 	lines      []string
 	offset     int // scroll offset (which line is at top)
 	viewport   int // height of viewport
 	autoScroll bool
+	quitting   bool
+	err        error
+	cursor     int
+}
+
+func ClearErrorAfter(t time.Duration) tea.Cmd {
+	return tea.Tick(t, func(_ time.Time) tea.Msg {
+		return clearErrorMsg{}
+	})
 }
 
 func InitialModel() model {
-	// Sample teleprompter text
-	text := `Welcome to the presentation.
-Today we will discuss the future of technology.
-Artificial intelligence is transforming our world.
-Machine learning enables computers to learn from data.
-Deep learning uses neural networks with many layers.
-Natural language processing helps computers understand text.
-Computer vision allows machines to interpret images.
-Robotics combines AI with physical automation.
-The Internet of Things connects billions of devices.
-Cloud computing provides scalable infrastructure.
-Blockchain enables decentralized applications.
-Quantum computing promises exponential speedups.
-Biotechnology merges biology with technology.
-Renewable energy powers a sustainable future.
-Space exploration opens new frontiers.
-Virtual reality creates immersive experiences.
-Augmented reality overlays digital information.
-5G networks enable faster connectivity.
-Edge computing brings processing closer to data.
-Thank you for your attention.`
-
-	lines := strings.Split(text, "\n")
 
 	return model{
-		lines:      lines,
+		app_state:  appSelectedSource,
 		offset:     0,
 		viewport:   20,
 		autoScroll: true,

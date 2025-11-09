@@ -7,7 +7,27 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func (m model) View() string {
+func (m model) viewInputSelector() string {
+	s := "\n Select input source:\n"
+	choices := []string{"Text", "File", "URL"}
+	for i, choice := range choices {
+		cursor := " "
+		if m.cursor == i {
+			cursor = ">"
+		}
+		s += cursor + " " + choice + "\n"
+
+	}
+	s += "\n  Use ↑/↓ to navigate, Enter to select, q to quit\n"
+
+	return s
+}
+
+func (m model) ViewTelePrompter() string {
+	if m.quitting {
+		return "Goodbye!\n"
+	}
+
 	// Calculate center line of viewport
 
 	var b strings.Builder
@@ -89,4 +109,14 @@ func (m model) View() string {
 	b.WriteString(help)
 
 	return b.String()
+}
+
+func (m model) View() string {
+	switch m.app_state {
+	case appSelectedSource:
+		return m.viewInputSelector()
+	case appRunning:
+		return m.ViewTelePrompter()
+	}
+	return ""
 }
