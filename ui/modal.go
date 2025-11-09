@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"errors"
+	"os"
 	"strings"
 	"time"
 
@@ -30,6 +32,7 @@ const (
 )
 
 type model struct {
+	selectedFile string
 	textinput    textinput.Model
 	app_state    appState
 	filepicker   filepicker.Model
@@ -80,28 +83,66 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) updateSourceSelection(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
+	// Handle quit keys first
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "ctrl+c":
+		if msg.String() == "q" || msg.String() == "ctrl+c" {
 			m.quitting = true
 			return m, tea.Quit
-		case "enter":
+		}
+	case clearErrorMsg:
+		m.err = nil
+		return m, nil
+	case tea.WindowSizeMsg:
+		m.viewport = msg.Height - 4
+		m.width = msg.Width
+	}
+
+	// Handle filepicker updates first (before intercepting keys)
+	if m.selectedType == inputTypeFile {
+		m.filepicker, cmd = m.filepicker.Update(msg)
+
+		// Did the user select a file? (This only returns true for files, not directories)
+		if didSelect, path := m.filepicker.DidSelectFile(msg); didSelect {
+			m.selectedFile = path
+			// Automatically load the file when selected
+			fileContent := internals.ReadFile(m.selectedFile)
+			wrappedLines := wrapText(string(fileContent), m.width)
+			m.lines = append(m.lines, wrappedLines...)
+			m.app_state = appRunning
+			return m, internals.Tick()
+		}
+
+		// Did the user select a disabled file?
+		if didSelect, path := m.filepicker.DidSelectDisabledFile(msg); didSelect {
+			m.err = errors.New(path + " is not valid.")
+			m.selectedFile = ""
+			return m, tea.Batch(cmd, ClearErrorAfter(2*time.Second))
+		}
+
+		// Let filepicker handle all other messages (including Enter for directory navigation)
+		// The filepicker will automatically navigate into directories when Enter is pressed
+		return m, cmd
+	}
+
+	// Handle text input mode
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.String() == "enter" {
 			text := m.textinput.Value()
 			wrappedLines := wrapText(text, m.width)
 			m.lines = append(m.lines, wrappedLines...)
 			m.app_state = appRunning
 			return m, internals.Tick()
 		}
-	case tea.WindowSizeMsg:
-		m.viewport = msg.Height - 4
-		m.width = msg.Width
 	}
+
 	m.textinput, cmd = m.textinput.Update(msg)
 	return m, cmd
 }
 
 func (m model) updateInputSelection(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -118,7 +159,8 @@ func (m model) updateInputSelection(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			m.selectedType = inputType(m.cursor)
-			if m.selectedType == inputTypeText {
+			switch m.selectedType {
+			case inputTypeText:
 				ti := textinput.New()
 				ti.Placeholder = "Enter your text..."
 				ti.Focus()
@@ -129,9 +171,25 @@ func (m model) updateInputSelection(msg tea.Msg) (tea.Model, tea.Cmd) {
 					ti.Width = 50
 				}
 				m.textinput = ti
+				cmd = textinput.Blink
+			case inputTypeFile:
+				fp := filepicker.New()
+				fp.AllowedTypes = []string{".mod", ".sum", ".go", ".txt", ".md"}
+				fp.CurrentDirectory, _ = os.UserHomeDir()
+				fp.DirAllowed = true  // Allow selecting directories for navigation
+				fp.FileAllowed = true // Allow selecting files
+				if m.viewport > 0 {
+					fp.Height = m.viewport - 6 // Leave space for header/footer
+				} else {
+					fp.Height = 10 // Default height
+				}
+				m.filepicker = fp
+				cmd = m.filepicker.Init()
+
 			}
+
 			m.app_state = addSource
-			return m, textinput.Blink
+			return m, cmd
 		}
 	case tea.WindowSizeMsg:
 		m.viewport = msg.Height - 4

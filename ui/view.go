@@ -112,20 +112,29 @@ func (m model) ViewTelePrompter() string {
 }
 
 func (m model) ViewAddSource() string {
+	var s strings.Builder
+	s.WriteString("")
 	switch m.selectedType {
 	case inputTypeText:
-		var s strings.Builder
 		s.WriteString("📝 Enter Project Name")
 		s.WriteString("\n\n")
 		s.WriteString(m.textinput.View())
 		s.WriteString("\n\n")
 		return s.String()
 	case inputTypeFile:
-		return "Add file source"
+		s.WriteString("\n  ")
+		if m.err != nil {
+			s.WriteString(m.filepicker.Styles.DisabledFile.Render(m.err.Error()))
+		} else if m.selectedFile == "" {
+			s.WriteString("Pick a file:")
+		} else {
+			s.WriteString("Selected file: " + m.filepicker.Styles.Selected.Render(m.selectedFile))
+		}
+		s.WriteString("\n\n" + m.filepicker.View() + "\n")
 	case inputTypeUrl:
 		return "Add url source"
 	}
-	return ""
+	return s.String()
 }
 
 func (m model) View() string {
